@@ -1,0 +1,211 @@
+# Build Yunge-consumable DSH artifacts (dsh/ + optional runtime/primary-runtime).
+# These are unsigned runtime trees for 云歌 DSH_AGENT_ARTIFACT — not signed Desktop installers.
+#
+# Dispatch: Actions → "Yunge DSH artifacts" → Run workflow
+# Tags: push dsh-v* or yunge-dsh-v* also runs; tag runs attach archives to a GitHub Release.
+name: Yunge DSH artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: 'Comma list of targets, or all (mac-arm64,mac-x64,win-x64,linux-x64)'
+        type: string
+        default: all
+        required: true
+      ref:
+        description: 'Git ref to build (branch, tag, or SHA); empty = workflow ref'
+        type: string
+        default: ''
+        required: false
+  push:
+    tags:
+      - 'dsh-v*'
+      - 'yunge-dsh-v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: yunge-dsh-artifacts-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PRIMARY_NODE_VERSION: '24'
+  DSH_TELEMETRY_DISABLED: '1'
+  DSH_DESKTOP_UNSIGNED: '1'
+
+jobs:
+  # Resolve which matrix legs to run (dispatch filter or all on tag).
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+    steps:
+      - id: resolve
+        env:
+          INPUT_TARGETS: ${{ github.event_name == 'workflow_dispatch' && inputs.targets || 'all' }}
+        run: |
+          set -euo pipefail
+          raw="${INPUT_TARGETS:-all}"
+          raw="$(echo "$raw" | tr '[:upper:]' '[:lower:]' | tr -d ' ')"
+          if [[ "$raw" == "all" || -z "$raw" ]]; then
+            raw="mac-arm64,mac-x64,win-x64,linux-x64"
+          fi
+          IFS=',' read -r -a wanted <<< "$raw"
+          declare -A ok=([mac-arm64]=1 [mac-x64]=1 [win-x64]=1 [linux-x64]=1)
+          items=()
+          for t in "${wanted[@]}"; do
+            [[ -n "$t" ]] || continue
+            if [[ -z "${ok[$t]+x}" ]]; then
+              echo "Unknown target: $t (allowed: mac-arm64,mac-x64,win-x64,linux-x64)" >&2
+              exit 1
+            fi
+            case "$t" in
+              mac-arm64)
+                items+=('{"target":"mac-arm64","slug":"darwin-arm64","runner":"macos-14","os":"macOS"}')
+                ;;
+              mac-x64)
+                items+=('{"target":"mac-x64","slug":"darwin-x64","runner":"macos-15-intel","os":"macOS"}')
+                ;;
+              win-x64)
+                items+=('{"target":"win-x64","slug":"win32-x64","runner":"windows-latest","os":"Windows"}')
+                ;;
+              linux-x64)
+                items+=('{"target":"linux-x64","slug":"linux-x64","runner":"ubuntu-latest","os":"Linux"}')
+                ;;
+            esac
+          done
+          if [[ ${#items[@]} -eq 0 ]]; then
+            echo "No targets selected" >&2
+            exit 1
+          fi
+          printf -v joined '%s,' "${items[@]}"
+          matrix="{\"include\":[${joined%,}]}"
+          {
+            echo "matrix<<EOF"
+            echo "$matrix"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Selected: $matrix"
+
+  build:
+    needs: select
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 240
+    name: ${{ matrix.target }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - uses: pnpm/action-setup@v5.0.0
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.target }}
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Configure pnpm store path
+        id: pnpm-store
+        run: |
+          store_root="$HOME/.local/share/pnpm/store"
+          echo "PNPM_CONFIG_STORE_DIR=$store_root" >> "$GITHUB_ENV"
+          store_path=$(PNPM_CONFIG_STORE_DIR="$store_root" pnpm store path --silent)
+          echo "path=$store_path" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-yunge-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-yunge-
+            ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      # —— Official Desktop unsigned :dir (mac / win) ——
+      - name: Prepare Windows unsigned dotenv
+        if: matrix.target == 'win-x64'
+        run: |
+          node -e 'const fs=require("node:fs"); const nl=String.fromCharCode(10); fs.writeFileSync("apps/desktop/.env.windows", ["DSH_DESKTOP_APP_ID=com.deepseek.harness","DSH_DESKTOP_AUTO_UPDATE_ENV=test","DOWNLOAD_TEST_ORIGIN=https://example.invalid/","DOWNLOAD_TEST_RELEASE_ID=0123456789abcdef0123456789abcdef","DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN=https://example.invalid/","DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN=https://example.invalid/","DSH_DESKTOP_MANDATORY_UPDATE_CONFIG={\"allowedAuthOrigins\":[\"https://login.example.invalid\"]}","DSH_DESKTOP_WINDOWS_COMPRESSION_LEVEL=3","DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_CONCURRENCY=4",""].join(nl))'
+
+      - name: Build unsigned Desktop target tree
+        if: matrix.target != 'linux-x64'
+        env:
+          DSH_DESKTOP_UNSIGNED: '1'
+        run: |
+          set -euo pipefail
+          case "${{ matrix.target }}" in
+            mac-arm64) script=(exec tsx apps/desktop/scripts/package-target.ts mac-arm64 --dir --unsigned) ;;
+            mac-x64)   script=(exec tsx apps/desktop/scripts/package-target.ts mac-x64 --dir --unsigned) ;;
+            win-x64)   script=(exec tsx apps/desktop/scripts/package-target.ts win-x64 --dir --unsigned) ;;
+            *) echo "unexpected target ${{ matrix.target }}" >&2; exit 1 ;;
+          esac
+          pnpm "${script[@]}"
+          root="apps/desktop/.desktop-build/targets/${{ matrix.target }}"
+          test -d "$root/dsh" || { echo "missing $root/dsh" >&2; exit 1; }
+          echo "ARTIFACT_FROM=$root" >> "$GITHUB_ENV"
+
+      # —— Linux workspace slim (UOS A; not official Desktop) ——
+      - name: Build linux slim workspace artifact
+        if: matrix.target == 'linux-x64'
+        run: |
+          set -euo pipefail
+          pnpm exec tsx scripts/pack-yunge-linux-slim.ts
+          root="dist/yunge-artifacts/${{ matrix.slug }}"
+          test -d "$root/dsh" || { echo "missing $root/dsh" >&2; exit 1; }
+          echo "ARTIFACT_FROM=$root" >> "$GITHUB_ENV"
+
+      - name: Stage and archive Yunge artifact
+        run: |
+          set -euo pipefail
+          extra=()
+          if [[ "${{ matrix.target }}" == "win-x64" ]]; then extra+=(--zip); fi
+          # linux slim already wrote under dist/yunge-artifacts/<slug>; still re-stage for a clean archive.
+          node scripts/stage-yunge-dsh-artifact.mjs \
+            --from "$ARTIFACT_FROM" \
+            --slug "${{ matrix.slug }}" \
+            --out-root dist/yunge-artifacts \
+            --archive \
+            "${extra[@]}"
+          ls -la dist/yunge-artifacts/
+
+      - name: Upload Actions artifact
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: yunge-dsh-${{ matrix.slug }}
+          path: |
+            dist/yunge-artifacts/yunge-dsh-${{ matrix.slug }}.tgz
+            dist/yunge-artifacts/yunge-dsh-${{ matrix.slug }}.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach archive to GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          archive=""
+          if [[ -f "dist/yunge-artifacts/yunge-dsh-${{ matrix.slug }}.tgz" ]]; then
+            archive="dist/yunge-artifacts/yunge-dsh-${{ matrix.slug }}.tgz"
+          else
+            archive="dist/yunge-artifacts/yunge-dsh-${{ matrix.slug }}.zip"
+          fi
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --title "$tag" --notes "Yunge DSH runtime artifacts (unsigned trees for DSH_AGENT_ARTIFACT)."
+          fi
+          gh release upload "$tag" "$archive" --clobber
