@@ -17,17 +17,22 @@
  * With --archive:
  *   <out-root>/yunge-dsh-<slug>.tgz   (unix)
  *   <out-root>/yunge-dsh-<slug>.zip   (win32 host, or when --zip)
+ *
+ * When --from is the staged dir (or lives under it), content is copied through a
+ * temp directory first so rm of the stage target cannot delete the live source.
  */
 import { spawnSync } from 'node:child_process'
 import {
   cpSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -61,6 +66,43 @@ function readVersion() {
   }
 }
 
+/** True when `inner` is the same path as `outer`, or a path under it. */
+function isSameOrInside(inner, outer) {
+  const a = resolve(inner)
+  const b = resolve(outer)
+  if (a === b) return true
+  const rel = relative(b, a)
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
+}
+
+function copyTree(src, dest) {
+  mkdirSync(dirname(dest), { recursive: true })
+  cpSync(src, dest, { recursive: true, dereference: true })
+}
+
+/**
+ * Materialize dsh/ (+ optional primary-runtime) from `from` into `destRoot`.
+ * `destRoot` must not overlap a live source that still needs reading, or the
+ * caller must have already copied through a non-overlapping temp.
+ */
+function materializeInto(from, destRoot) {
+  const srcDsh = join(from, 'dsh')
+  if (!existsSync(srcDsh)) die(`missing dsh/ under ${from}`)
+
+  rmSync(destRoot, { recursive: true, force: true })
+  mkdirSync(destRoot, { recursive: true })
+  copyTree(srcDsh, join(destRoot, 'dsh'))
+
+  const srcPrimary = join(from, 'runtime', 'primary-runtime')
+  let hasPrimary = false
+  if (existsSync(srcPrimary)) {
+    mkdirSync(join(destRoot, 'runtime'), { recursive: true })
+    copyTree(srcPrimary, join(destRoot, 'runtime', 'primary-runtime'))
+    hasPrimary = true
+  }
+  return hasPrimary
+}
+
 function main() {
   const fromRaw = argValue('from')
   const slug = argValue('slug')
@@ -74,23 +116,23 @@ function main() {
   if (!SLUGS.has(slug)) die(`unknown slug ${slug}`)
 
   const from = resolve(fromRaw)
-  const srcDsh = join(from, 'dsh')
-  if (!existsSync(srcDsh)) die(`missing dsh/ under ${from}`)
-
   const staged = join(outRoot, slug)
-  rmSync(staged, { recursive: true, force: true })
-  mkdirSync(staged, { recursive: true })
-  cpSync(srcDsh, join(staged, 'dsh'), { recursive: true, dereference: true })
+  if (!existsSync(join(from, 'dsh'))) die(`missing dsh/ under ${from}`)
 
-  const srcPrimary = join(from, 'runtime', 'primary-runtime')
-  let hasPrimary = false
-  if (existsSync(srcPrimary)) {
-    mkdirSync(join(staged, 'runtime'), { recursive: true })
-    cpSync(srcPrimary, join(staged, 'runtime', 'primary-runtime'), {
-      recursive: true,
-      dereference: true,
-    })
-    hasPrimary = true
+  let hasPrimary
+  // Overlap: wiping `staged` would delete the live --from (same path or parent).
+  if (isSameOrInside(from, staged)) {
+    const tmp = mkdtempSync(join(tmpdir(), `yunge-stage-${slug}-`))
+    try {
+      hasPrimary = materializeInto(from, tmp)
+      rmSync(staged, { recursive: true, force: true })
+      mkdirSync(dirname(staged), { recursive: true })
+      cpSync(tmp, staged, { recursive: true, dereference: true })
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  } else {
+    hasPrimary = materializeInto(from, staged)
   }
 
   const [platform, arch] = slug.split('-')

@@ -61,15 +61,18 @@ Path slug (`darwin-arm64` / `win32-x64` / `linux-x64`) satisfies 云歌 pack gat
 pnpm exec tsx apps/desktop/scripts/package-target.ts mac-x64 --dir --unsigned
 # → apps/desktop/.desktop-build/targets/mac-x64/{dsh,runtime}
 
-# Linux slim (must run on Linux):
-pnpm exec tsx scripts/pack-yunge-linux-slim.ts
-# → dist/yunge-artifacts/linux-x64/{dsh,runtime?}
+# Linux slim (must run on Linux). Prefer a distinct --out-root so Stage does not
+# restage from the same path (workflow uses dist/yunge-artifacts/_raw):
+pnpm exec tsx scripts/pack-yunge-linux-slim.ts --out-root dist/yunge-artifacts/_raw
+# → dist/yunge-artifacts/_raw/linux-x64/{dsh,runtime?}
 
-# Stage + archive any of the above:
+# Stage + archive (safe even if --from equals out-root/<slug>; uses a temp copy):
 node scripts/stage-yunge-dsh-artifact.mjs \
-  --from apps/desktop/.desktop-build/targets/mac-x64 \
-  --slug darwin-x64 \
+  --from dist/yunge-artifacts/_raw/linux-x64 \
+  --slug linux-x64 \
   --archive
+# Mac/Win example:
+#   --from apps/desktop/.desktop-build/targets/mac-x64 --slug darwin-x64 --archive
 ```
 
 ## Signing

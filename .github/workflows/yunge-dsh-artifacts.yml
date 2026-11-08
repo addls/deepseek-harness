@@ -159,12 +159,14 @@ jobs:
           echo "ARTIFACT_FROM=$root" >> "$GITHUB_ENV"
 
       # —— Linux workspace slim (UOS A; not official Desktop) ——
+      # Write slim to _raw/<slug> so Stage can wipe dist/yunge-artifacts/<slug>
+      # without deleting the live source (same-path restage used to self-delete).
       - name: Build linux slim workspace artifact
         if: matrix.target == 'linux-x64'
         run: |
           set -euo pipefail
-          pnpm exec tsx scripts/pack-yunge-linux-slim.ts
-          root="dist/yunge-artifacts/${{ matrix.slug }}"
+          pnpm exec tsx scripts/pack-yunge-linux-slim.ts --out-root dist/yunge-artifacts/_raw
+          root="dist/yunge-artifacts/_raw/${{ matrix.slug }}"
           test -d "$root/dsh" || { echo "missing $root/dsh" >&2; exit 1; }
           echo "ARTIFACT_FROM=$root" >> "$GITHUB_ENV"
 
@@ -173,7 +175,8 @@ jobs:
           set -euo pipefail
           extra=()
           if [[ "${{ matrix.target }}" == "win-x64" ]]; then extra+=(--zip); fi
-          # linux slim already wrote under dist/yunge-artifacts/<slug>; still re-stage for a clean archive.
+          # Stage into dist/yunge-artifacts/<slug> (linux source is _raw/<slug>; distinct paths).
+          # stage-yunge-dsh-artifact also temp-copies when --from equals the stage dir.
           node scripts/stage-yunge-dsh-artifact.mjs \
             --from "$ARTIFACT_FROM" \
             --slug "${{ matrix.slug }}" \
