@@ -52,13 +52,40 @@ describe('stage-yunge-dsh-artifact', () => {
     ])
     expect(result.status, result.stderr).toBe(0)
     expect(readFileSync(join(outRoot, 'linux-x64', 'dsh', 'marker.txt'), 'utf8')).toBe('distinct-source')
-    expect(existsSync(join(outRoot, 'linux-x64', 'runtime', 'primary-runtime', 'node'))).toBe(true)
+    expect(existsSync(join(outRoot, 'linux-x64', 'runtime', 'primary-runtime', 'node'))).toBe(false)
     const meta = JSON.parse(readFileSync(join(outRoot, 'linux-x64', 'yunge-artifact.json'), 'utf8')) as {
       slug: string
       hasPrimaryRuntime: boolean
       hasOfficeSkills?: boolean
+      withOffice?: boolean
     }
     expect(meta.slug).toBe('linux-x64')
+    expect(meta.withOffice).toBe(false)
+    expect(meta.hasPrimaryRuntime).toBe(false)
+  })
+
+
+  it('includes primary-runtime when --with-office is set', () => {
+    const from = fixture('yunge-office-from-')
+    const outRoot = fixture('yunge-office-out-')
+    seedArtifact(from, 'office-source', true)
+    mkdirSync(join(from, 'dsh', 'node_modules', '@deepseek-ai', 'libreoffice-kit-darwin-x64'), { recursive: true })
+    writeFileSync(join(from, 'dsh', 'node_modules', '@deepseek-ai', 'libreoffice-kit-darwin-x64', 'keep.txt'), 'kit')
+
+    const slim = runStage(['--from', from, '--slug', 'darwin-x64', '--out-root', outRoot])
+    expect(slim.status, slim.stderr).toBe(0)
+    expect(existsSync(join(outRoot, 'darwin-x64', 'dsh', 'node_modules', '@deepseek-ai', 'libreoffice-kit-darwin-x64'))).toBe(false)
+
+    const fatOut = fixture('yunge-office-fat-')
+    const fat = runStage(['--from', from, '--slug', 'darwin-x64', '--out-root', fatOut, '--with-office'])
+    expect(fat.status, fat.stderr).toBe(0)
+    expect(existsSync(join(fatOut, 'darwin-x64', 'runtime', 'primary-runtime', 'node'))).toBe(true)
+    expect(existsSync(join(fatOut, 'darwin-x64', 'dsh', 'node_modules', '@deepseek-ai', 'libreoffice-kit-darwin-x64', 'keep.txt'))).toBe(true)
+    const meta = JSON.parse(readFileSync(join(fatOut, 'darwin-x64', 'yunge-artifact.json'), 'utf8')) as {
+      withOffice?: boolean
+      hasPrimaryRuntime: boolean
+    }
+    expect(meta.withOffice).toBe(true)
     expect(meta.hasPrimaryRuntime).toBe(true)
   })
 
@@ -75,7 +102,7 @@ describe('stage-yunge-dsh-artifact', () => {
     ])
     expect(result.status, result.stderr).toBe(0)
     expect(readFileSync(join(staged, 'dsh', 'marker.txt'), 'utf8')).toBe('same-path-source')
-    expect(existsSync(join(staged, 'runtime', 'primary-runtime', 'node'))).toBe(true)
+    expect(existsSync(join(staged, 'runtime', 'primary-runtime', 'node'))).toBe(false)
     expect(existsSync(join(staged, 'yunge-artifact.json'))).toBe(true)
     const tgz = join(outRoot, 'yunge-dsh-linux-x64.tgz')
     expect(existsSync(tgz)).toBe(true)

@@ -6,9 +6,19 @@ Builds **unsigned** runtime trees for 云歌 PC embedding — **not** signed Des
 
 ```text
 dsh/                         # required
-runtime/primary-runtime/     # optional (Office / independent Node)
+runtime/primary-runtime/     # only with stage --with-office (Office / independent Node)
 yunge-artifact.json          # metadata (platform/arch/slug)
 ```
+
+
+## Slim by default (云歌)
+
+Stage **omits** `runtime/primary-runtime` / `office-skills` and **strips** `@deepseek-ai/libreoffice-kit*` (+ `dsh-skill-office`, `dsh-office-to-pdf`) unless you pass `--with-office`.
+
+Linux slim packer defaults to `--skip-primary-runtime`; use `--with-office` when an Office-capable linux artifact is needed.
+
+云歌 Host keeps Office off unless `LINGXIN_DSH_ENABLE_OFFICE=1`, so slim artifacts are the normal Release pin.
+
 
 ## Targets
 

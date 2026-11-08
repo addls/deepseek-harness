@@ -8,7 +8,7 @@
  * Output (default):
  *   dist/yunge-artifacts/linux-<arch>/
  *     dsh/                         # required (real node_modules, no pnpm links)
- *     runtime/primary-runtime/     # best-effort; omitted if prepare fails
+ *     runtime/primary-runtime/     # omitted by default; pass --with-office (or --no-skip-primary-runtime)
  *     yunge-artifact.json
  *
  * Usage (from repo root, on Linux):
@@ -231,7 +231,8 @@ function main(): void {
   const { values } = parseArgs({
     options: {
       'skip-build': { type: 'boolean', default: false },
-      'skip-primary-runtime': { type: 'boolean', default: false },
+      'skip-primary-runtime': { type: 'boolean', default: true },
+      'with-office': { type: 'boolean', default: false },
       'out-root': { type: 'string' },
     },
     allowPositionals: false,
@@ -267,7 +268,8 @@ function main(): void {
     materializeDsh(installRoot, join(staged, 'dsh'))
 
     let hasPrimary = false
-    if (!values['skip-primary-runtime']) {
+    const wantOffice = Boolean(values['with-office'])
+    if (wantOffice || !values['skip-primary-runtime']) {
       hasPrimary = preparePrimaryRuntime(join(staged, 'runtime'), slug)
       if (!hasPrimary) {
         rmSync(join(staged, 'runtime'), { recursive: true, force: true })

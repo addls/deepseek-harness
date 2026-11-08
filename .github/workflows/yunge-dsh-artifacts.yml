@@ -173,6 +173,7 @@ jobs:
           fi
           # Stage into dist/yunge-artifacts/<slug> (linux source is _raw/<slug>; distinct paths).
           # stage-yunge-dsh-artifact also temp-copies when --from equals the stage dir.
+          # Default slim: no primary-runtime / LibreOffice Kit. Add --with-office for Office artifacts.
           node scripts/stage-yunge-dsh-artifact.mjs "${args[@]}"
           ls -la dist/yunge-artifacts/
 

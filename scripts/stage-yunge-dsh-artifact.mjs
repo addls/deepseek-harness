@@ -7,12 +7,14 @@
  *     --from <artifact-root-with-dsh> \
  *     --slug darwin-arm64|darwin-x64|win32-x64|linux-x64 \
  *     [--out-root dist/yunge-artifacts] \
- *     [--archive]
+ *     [--archive] \
+ *     [--with-office]   # include primary-runtime + office-skills + LibreOffice Kit
  *
+ * Default (云歌 slim): dsh/ only, strip LibreOffice Kit natives; no runtime/.
  * Layout written:
  *   <out-root>/<slug>/dsh/
- *   <out-root>/<slug>/runtime/primary-runtime/   (when present in --from)
- *   <out-root>/<slug>/runtime/office-skills/     (when present in --from)
+ *   <out-root>/<slug>/runtime/primary-runtime/   (only with --with-office)
+ *   <out-root>/<slug>/runtime/office-skills/     (only with --with-office)
  *   <out-root>/<slug>/yunge-artifact.json
  *
  * With --archive:
@@ -29,6 +31,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   rmSync,
@@ -108,6 +111,26 @@ function normalizePrimaryRuntimePythonAliases(primaryRoot) {
   }
 }
 
+
+/** Drop Office-only native/skill packages from a staged dsh/ tree (~150MB+). */
+function stripOfficeNativeDeps(dshRoot) {
+  const nm = join(dshRoot, 'node_modules', '@deepseek-ai')
+  if (!existsSync(nm)) return []
+  const removed = []
+  for (const name of readdirSync(nm)) {
+    if (
+      name === 'libreoffice-kit'
+      || name.startsWith('libreoffice-kit-')
+      || name === 'dsh-skill-office'
+      || name === 'dsh-office-to-pdf'
+    ) {
+      rmSync(join(nm, name), { recursive: true, force: true })
+      removed.push(name)
+    }
+  }
+  return removed
+}
+
 function copyTree(src, dest) {
   mkdirSync(dirname(dest), { recursive: true })
   cpSync(src, dest, { recursive: true, dereference: true })
@@ -118,31 +141,39 @@ function copyTree(src, dest) {
  * `destRoot` must not overlap a live source that still needs reading, or the
  * caller must have already copied through a non-overlapping temp.
  */
-function materializeInto(from, destRoot) {
+function materializeInto(from, destRoot, { withOffice = false } = {}) {
   const srcDsh = join(from, 'dsh')
   if (!existsSync(srcDsh)) die(`missing dsh/ under ${from}`)
 
   rmSync(destRoot, { recursive: true, force: true })
   mkdirSync(destRoot, { recursive: true })
-  copyTree(srcDsh, join(destRoot, 'dsh'))
+  const destDsh = join(destRoot, 'dsh')
+  copyTree(srcDsh, destDsh)
 
-  const srcPrimary = join(from, 'runtime', 'primary-runtime')
+  let stripped = []
+  if (!withOffice) {
+    stripped = stripOfficeNativeDeps(destDsh)
+  }
+
   let hasPrimary = false
-  if (existsSync(srcPrimary)) {
-    mkdirSync(join(destRoot, 'runtime'), { recursive: true })
-    const destPrimary = join(destRoot, 'runtime', 'primary-runtime')
-    copyTree(srcPrimary, destPrimary)
-    normalizePrimaryRuntimePythonAliases(destPrimary)
-    hasPrimary = true
-  }
-  const srcOfficeSkills = join(from, 'runtime', 'office-skills')
   let hasOfficeSkills = false
-  if (existsSync(srcOfficeSkills)) {
-    mkdirSync(join(destRoot, 'runtime'), { recursive: true })
-    copyTree(srcOfficeSkills, join(destRoot, 'runtime', 'office-skills'))
-    hasOfficeSkills = true
+  if (withOffice) {
+    const srcPrimary = join(from, 'runtime', 'primary-runtime')
+    if (existsSync(srcPrimary)) {
+      mkdirSync(join(destRoot, 'runtime'), { recursive: true })
+      const destPrimary = join(destRoot, 'runtime', 'primary-runtime')
+      copyTree(srcPrimary, destPrimary)
+      normalizePrimaryRuntimePythonAliases(destPrimary)
+      hasPrimary = true
+    }
+    const srcOfficeSkills = join(from, 'runtime', 'office-skills')
+    if (existsSync(srcOfficeSkills)) {
+      mkdirSync(join(destRoot, 'runtime'), { recursive: true })
+      copyTree(srcOfficeSkills, join(destRoot, 'runtime', 'office-skills'))
+      hasOfficeSkills = true
+    }
   }
-  return { hasPrimary, hasOfficeSkills }
+  return { hasPrimary, hasOfficeSkills, strippedOfficeNatives: stripped, withOffice }
 }
 
 function main() {
@@ -151,6 +182,7 @@ function main() {
   const outRoot = resolve(ROOT, argValue('out-root') || 'dist/yunge-artifacts')
   const wantArchive = hasFlag('archive')
   const forceZip = hasFlag('zip')
+  const withOffice = hasFlag('with-office')
 
   if (!fromRaw || !slug) {
     die('required: --from <dir> --slug <darwin-arm64|darwin-x64|win32-x64|linux-x64|linux-arm64>')
@@ -166,7 +198,7 @@ function main() {
   if (isSameOrInside(from, staged)) {
     const tmp = mkdtempSync(join(tmpdir(), `yunge-stage-${slug}-`))
     try {
-      stagedBits = materializeInto(from, tmp)
+      stagedBits = materializeInto(from, tmp, { withOffice })
       rmSync(staged, { recursive: true, force: true })
       mkdirSync(dirname(staged), { recursive: true })
       cpSync(tmp, staged, { recursive: true, dereference: true })
@@ -174,9 +206,9 @@ function main() {
       rmSync(tmp, { recursive: true, force: true })
     }
   } else {
-    stagedBits = materializeInto(from, staged)
+    stagedBits = materializeInto(from, staged, { withOffice })
   }
-  const { hasPrimary, hasOfficeSkills } = stagedBits
+  const { hasPrimary, hasOfficeSkills, strippedOfficeNatives, withOffice: officeOn } = stagedBits
 
   const [platform, arch] = slug.split('-')
   const meta = {
@@ -186,8 +218,10 @@ function main() {
     platform,
     arch,
     dshVersion: readVersion(),
+    withOffice: officeOn,
     hasPrimaryRuntime: hasPrimary,
     hasOfficeSkills,
+    strippedOfficeNatives,
     preparedAt: new Date().toISOString(),
     source: from,
   }
@@ -195,8 +229,11 @@ function main() {
 
   console.log(`stage-yunge-dsh-artifact: staged ${staged}`)
   console.log(
-    `  dsh/=yes primary-runtime=${hasPrimary ? 'yes' : 'no'} office-skills=${hasOfficeSkills ? 'yes' : 'no'}`,
+    `  dsh/=yes with-office=${officeOn ? 'yes' : 'no'} primary-runtime=${hasPrimary ? 'yes' : 'no'} office-skills=${hasOfficeSkills ? 'yes' : 'no'}`,
   )
+  if (strippedOfficeNatives.length) {
+    console.log(`  stripped office natives: ${strippedOfficeNatives.join(', ')}`)
+  }
 
   if (!wantArchive) return
 
