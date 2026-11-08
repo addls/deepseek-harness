@@ -1,27 +1,15 @@
 # Build Yunge-consumable DSH artifacts (dsh/ + optional runtime/primary-runtime).
 # These are unsigned runtime trees for 云歌 DSH_AGENT_ARTIFACT — not signed Desktop installers.
 #
-# Dispatch: Actions → "Yunge DSH artifacts" → Run workflow
-# Tags: push dsh-v* or yunge-dsh-v* also runs; tag runs attach archives to a GitHub Release.
+# Trigger: tag push only (`yunge-dsh-v*` preferred for 云歌 pins; `dsh-v*` also accepted).
+# Tag runs build all four targets and attach archives to a GitHub Release.
 name: Yunge DSH artifacts
 
 on:
-  workflow_dispatch:
-    inputs:
-      targets:
-        description: 'Comma list of targets, or all (mac-arm64,mac-x64,win-x64,linux-x64)'
-        type: string
-        default: all
-        required: true
-      ref:
-        description: 'Git ref to build (branch, tag, or SHA); empty = workflow ref'
-        type: string
-        default: ''
-        required: false
   push:
     tags:
-      - 'dsh-v*'
       - 'yunge-dsh-v*'
+      - 'dsh-v*'
 
 permissions:
   contents: read
@@ -36,7 +24,7 @@ env:
   DSH_DESKTOP_UNSIGNED: '1'
 
 jobs:
-  # Resolve which matrix legs to run (dispatch filter or all on tag).
+  # Always build all four targets on a matching tag push.
   select:
     runs-on: ubuntu-latest
     outputs:
@@ -44,7 +32,7 @@ jobs:
     steps:
       - id: resolve
         env:
-          INPUT_TARGETS: ${{ github.event_name == 'workflow_dispatch' && inputs.targets || 'all' }}
+          INPUT_TARGETS: all
         run: |
           set -euo pipefail
           raw="${INPUT_TARGETS:-all}"
@@ -106,7 +94,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+          ref: ${{ github.ref }}
 
       - uses: pnpm/action-setup@v5.0.0
         with:

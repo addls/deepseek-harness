@@ -23,18 +23,16 @@ Official Desktop packaging only allows `mac-arm64` / `mac-x64` / `win-x64`. Linu
 
 ## How to run
 
-### Manual (`workflow_dispatch`)
+**Tag push only** — no `workflow_dispatch`, no branch/PR builds.
 
-1. Open the harness repo on GitHub → **Actions** → **Yunge DSH artifacts**.
-2. **Run workflow**.
-3. Inputs:
-   - `targets`: `all` (default) or a comma list, e.g. `mac-arm64,linux-x64`
-   - `ref`: optional branch/tag/SHA (empty = current workflow ref)
-4. Download the Actions artifact `yunge-dsh-<slug>` (`.tgz` on mac/linux, `.zip` on windows).
+Push a tag matching `yunge-dsh-v*` (preferred; 云歌 pins this) or `dsh-v*`:
 
-### Tags / Release
+```bash
+git tag yunge-dsh-v1.0.1
+git push origin yunge-dsh-v1.0.1
+```
 
-Push a tag matching `dsh-v*` or `yunge-dsh-v*`. The workflow builds all four targets and uploads archives onto that GitHub Release (creating the release if needed).
+That starts **Yunge DSH artifacts**, builds all four targets (`mac-arm64`, `mac-x64`, `win-x64`, `linux-x64`), uploads Actions artifacts `yunge-dsh-<slug>`, and attaches archives to a GitHub Release for that tag (creating the release if needed). Download `.tgz` (mac/linux) or `.zip` (windows) from the Release or the Actions run.
 
 ## Use with 云歌 (lingxin)
 
