@@ -257,7 +257,7 @@ function main(): void {
     prepareDesktopPackageSet(
       [packed.dsh, packed.vendor, packed.landlock],
       packageSetDir,
-      { platform: 'linux', arch } as { platform: 'darwin' | 'win32'; arch: 'arm64' | 'x64' },
+      { platform: 'linux', arch } as unknown as { platform: 'darwin' | 'win32'; arch: 'arm64' | 'x64' },
     )
     console.log(`pack-yunge-linux-slim: package set → ${packageSetDir}`)
     installFromPackageSet(packageSetDir, installRoot, { platform: 'linux', arch })
