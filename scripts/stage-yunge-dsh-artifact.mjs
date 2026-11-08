@@ -26,10 +26,14 @@ import { spawnSync } from 'node:child_process'
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   rmSync,
+  symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -76,6 +80,34 @@ function isSameOrInside(inner, outer) {
   return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
 }
 
+
+/** Rewrite CI absolute python/python3 symlinks to relative pythonX.Y aliases. */
+function normalizePrimaryRuntimePythonAliases(primaryRoot) {
+  const bin = join(primaryRoot, 'dependencies', 'python', 'bin')
+  if (!existsSync(bin)) return
+  let interpreter = 'python3.12'
+  const runtimeJson = join(primaryRoot, 'runtime.json')
+  if (existsSync(runtimeJson)) {
+    try {
+      const manifest = JSON.parse(readFileSync(runtimeJson, 'utf8'))
+      const parts = String(manifest.python || '').split('.')
+      if (parts.length >= 2) interpreter = `python${parts[0]}.${parts[1]}`
+    } catch { /* keep default */ }
+  }
+  const target = join(bin, interpreter)
+  if (!existsSync(target) || !lstatSync(target).isFile()) return
+  for (const name of ['python', 'python3']) {
+    const path = join(bin, name)
+    let ok = false
+    try {
+      ok = existsSync(path) && lstatSync(path).isSymbolicLink() && readlinkSync(path) === interpreter
+    } catch { ok = false }
+    if (ok) continue
+    try { unlinkSync(path) } catch { /* missing */ }
+    symlinkSync(interpreter, path)
+  }
+}
+
 function copyTree(src, dest) {
   mkdirSync(dirname(dest), { recursive: true })
   cpSync(src, dest, { recursive: true, dereference: true })
@@ -98,7 +130,9 @@ function materializeInto(from, destRoot) {
   let hasPrimary = false
   if (existsSync(srcPrimary)) {
     mkdirSync(join(destRoot, 'runtime'), { recursive: true })
-    copyTree(srcPrimary, join(destRoot, 'runtime', 'primary-runtime'))
+    const destPrimary = join(destRoot, 'runtime', 'primary-runtime')
+    copyTree(srcPrimary, destPrimary)
+    normalizePrimaryRuntimePythonAliases(destPrimary)
     hasPrimary = true
   }
   const srcOfficeSkills = join(from, 'runtime', 'office-skills')
