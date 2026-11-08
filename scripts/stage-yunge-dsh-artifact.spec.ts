@@ -56,6 +56,7 @@ describe('stage-yunge-dsh-artifact', () => {
     const meta = JSON.parse(readFileSync(join(outRoot, 'linux-x64', 'yunge-artifact.json'), 'utf8')) as {
       slug: string
       hasPrimaryRuntime: boolean
+      hasOfficeSkills?: boolean
     }
     expect(meta.slug).toBe('linux-x64')
     expect(meta.hasPrimaryRuntime).toBe(true)

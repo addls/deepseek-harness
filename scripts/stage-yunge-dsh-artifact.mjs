@@ -12,6 +12,7 @@
  * Layout written:
  *   <out-root>/<slug>/dsh/
  *   <out-root>/<slug>/runtime/primary-runtime/   (when present in --from)
+ *   <out-root>/<slug>/runtime/office-skills/     (when present in --from)
  *   <out-root>/<slug>/yunge-artifact.json
  *
  * With --archive:
@@ -100,7 +101,14 @@ function materializeInto(from, destRoot) {
     copyTree(srcPrimary, join(destRoot, 'runtime', 'primary-runtime'))
     hasPrimary = true
   }
-  return hasPrimary
+  const srcOfficeSkills = join(from, 'runtime', 'office-skills')
+  let hasOfficeSkills = false
+  if (existsSync(srcOfficeSkills)) {
+    mkdirSync(join(destRoot, 'runtime'), { recursive: true })
+    copyTree(srcOfficeSkills, join(destRoot, 'runtime', 'office-skills'))
+    hasOfficeSkills = true
+  }
+  return { hasPrimary, hasOfficeSkills }
 }
 
 function main() {
@@ -119,12 +127,12 @@ function main() {
   const staged = join(outRoot, slug)
   if (!existsSync(join(from, 'dsh'))) die(`missing dsh/ under ${from}`)
 
-  let hasPrimary
+  let stagedBits
   // Overlap: wiping `staged` would delete the live --from (same path or parent).
   if (isSameOrInside(from, staged)) {
     const tmp = mkdtempSync(join(tmpdir(), `yunge-stage-${slug}-`))
     try {
-      hasPrimary = materializeInto(from, tmp)
+      stagedBits = materializeInto(from, tmp)
       rmSync(staged, { recursive: true, force: true })
       mkdirSync(dirname(staged), { recursive: true })
       cpSync(tmp, staged, { recursive: true, dereference: true })
@@ -132,8 +140,9 @@ function main() {
       rmSync(tmp, { recursive: true, force: true })
     }
   } else {
-    hasPrimary = materializeInto(from, staged)
+    stagedBits = materializeInto(from, staged)
   }
+  const { hasPrimary, hasOfficeSkills } = stagedBits
 
   const [platform, arch] = slug.split('-')
   const meta = {
@@ -144,13 +153,16 @@ function main() {
     arch,
     dshVersion: readVersion(),
     hasPrimaryRuntime: hasPrimary,
+    hasOfficeSkills,
     preparedAt: new Date().toISOString(),
     source: from,
   }
   writeFileSync(join(staged, 'yunge-artifact.json'), `${JSON.stringify(meta, null, 2)}\n`)
 
   console.log(`stage-yunge-dsh-artifact: staged ${staged}`)
-  console.log(`  dsh/=yes primary-runtime=${hasPrimary ? 'yes' : 'no'}`)
+  console.log(
+    `  dsh/=yes primary-runtime=${hasPrimary ? 'yes' : 'no'} office-skills=${hasOfficeSkills ? 'yes' : 'no'}`,
+  )
 
   if (!wantArchive) return
 
