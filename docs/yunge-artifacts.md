@@ -14,7 +14,7 @@ yunge-artifact.json          # metadata (platform/arch/slug)
 
 | Target | Runner | Method | Archive slug |
 |--------|--------|--------|--------------|
-| `mac-arm64` | `macos-14` (Apple Silicon) | Official Desktop `package-target … --dir --unsigned` | `darwin-arm64` |
+| `mac-arm64` | `macos-15` (Apple Silicon) | Official Desktop `package-target … --dir --unsigned` | `darwin-arm64` |
 | `mac-x64` | `macos-15-intel` | Same | `darwin-x64` |
 | `win-x64` | `windows-latest` | Same | `win32-x64` |
 | `linux-x64` | `ubuntu-latest` | **Workspace slim** (`scripts/pack-yunge-linux-slim.ts`) — **not** official Desktop Linux | `linux-x64` |

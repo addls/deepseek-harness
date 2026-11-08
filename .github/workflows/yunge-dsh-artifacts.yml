@@ -63,7 +63,7 @@ jobs:
             fi
             case "$t" in
               mac-arm64)
-                items+=('{"target":"mac-arm64","slug":"darwin-arm64","runner":"macos-14","os":"macOS"}')
+                items+=('{"target":"mac-arm64","slug":"darwin-arm64","runner":"macos-15","os":"macOS"}')
                 ;;
               mac-x64)
                 items+=('{"target":"mac-x64","slug":"darwin-x64","runner":"macos-15-intel","os":"macOS"}')
