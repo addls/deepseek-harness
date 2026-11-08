@@ -78,3 +78,9 @@ node scripts/stage-yunge-dsh-artifact.mjs \
 ## Signing
 
 These trees are produced with `DSH_DESKTOP_UNSIGNED=1` / `--unsigned`. They do **not** need Apple or Microsoft code-signing certificates. 云歌’s own installer signing remains separate.
+
+## CI notes
+
+- **Stage argv (macOS):** the Stage step keeps flags in a non-empty bash array before `"${args[@]}"`. An empty `extra=()` plus `set -u` fails on macOS runners (`extra[@]: unbound variable`).
+- **Linux source path:** slim pack writes `dist/yunge-artifacts/_raw/<slug>` so Stage can wipe `dist/yunge-artifacts/<slug>` without self-deleting. The stage script also temp-copies when `--from` overlaps the stage dir.
+- **Windows `prepare:packages`:** Desktop package-set reading uses `scripts/release/tarball.ts` (`tar` beside the `.tgz` via `cwd` + basename) so GNU tar on `windows-latest` does not treat `D:\…` as a remote host. Official `windows-package.yml` runs on self-hosted runners and did not surface this path.

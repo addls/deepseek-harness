@@ -173,16 +173,19 @@ jobs:
       - name: Stage and archive Yunge artifact
         run: |
           set -euo pipefail
-          extra=()
-          if [[ "${{ matrix.target }}" == "win-x64" ]]; then extra+=(--zip); fi
+          # Keep argv in a non-empty array: bash `set -u` rejects `"${empty[@]}"` (macOS runners).
+          args=(
+            --from "$ARTIFACT_FROM"
+            --slug "${{ matrix.slug }}"
+            --out-root dist/yunge-artifacts
+            --archive
+          )
+          if [[ "${{ matrix.target }}" == "win-x64" ]]; then
+            args+=(--zip)
+          fi
           # Stage into dist/yunge-artifacts/<slug> (linux source is _raw/<slug>; distinct paths).
           # stage-yunge-dsh-artifact also temp-copies when --from equals the stage dir.
-          node scripts/stage-yunge-dsh-artifact.mjs \
-            --from "$ARTIFACT_FROM" \
-            --slug "${{ matrix.slug }}" \
-            --out-root dist/yunge-artifacts \
-            --archive \
-            "${extra[@]}"
+          node scripts/stage-yunge-dsh-artifact.mjs "${args[@]}"
           ls -la dist/yunge-artifacts/
 
       - name: Upload Actions artifact
