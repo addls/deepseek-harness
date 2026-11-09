@@ -2,7 +2,7 @@
 # These are unsigned runtime trees for 云歌 DSH_AGENT_ARTIFACT — not signed Desktop installers.
 #
 # Trigger: tag push only (`yunge-dsh-v*` preferred for 云歌 pins; `dsh-v*` also accepted).
-# Tag runs build all four targets and attach archives to a GitHub Release.
+# Tag runs build all five targets and attach archives to a GitHub Release.
 name: Yunge DSH artifacts
 
 on:
@@ -24,7 +24,7 @@ env:
   DSH_DESKTOP_UNSIGNED: '1'
 
 jobs:
-  # Always build all four targets on a matching tag push.
+  # Always build all five targets on a matching tag push.
   select:
     runs-on: ubuntu-latest
     outputs:
@@ -38,15 +38,15 @@ jobs:
           raw="${INPUT_TARGETS:-all}"
           raw="$(echo "$raw" | tr '[:upper:]' '[:lower:]' | tr -d ' ')"
           if [[ "$raw" == "all" || -z "$raw" ]]; then
-            raw="mac-arm64,mac-x64,win-x64,linux-x64"
+            raw="mac-arm64,mac-x64,win-x64,linux-x64,linux-arm64"
           fi
           IFS=',' read -r -a wanted <<< "$raw"
-          declare -A ok=([mac-arm64]=1 [mac-x64]=1 [win-x64]=1 [linux-x64]=1)
+          declare -A ok=([mac-arm64]=1 [mac-x64]=1 [win-x64]=1 [linux-x64]=1 [linux-arm64]=1)
           items=()
           for t in "${wanted[@]}"; do
             [[ -n "$t" ]] || continue
             if [[ -z "${ok[$t]+x}" ]]; then
-              echo "Unknown target: $t (allowed: mac-arm64,mac-x64,win-x64,linux-x64)" >&2
+              echo "Unknown target: $t (allowed: mac-arm64,mac-x64,win-x64,linux-x64,linux-arm64)" >&2
               exit 1
             fi
             case "$t" in
@@ -61,6 +61,10 @@ jobs:
                 ;;
               linux-x64)
                 items+=('{"target":"linux-x64","slug":"linux-x64","runner":"ubuntu-latest","os":"Linux"}')
+                ;;
+              linux-arm64)
+                # Native arm64 Linux (UOS 鲲鹏/飞腾). Must not reuse linux-x64 slim tree.
+                items+=('{"target":"linux-arm64","slug":"linux-arm64","runner":"ubuntu-24.04-arm","os":"Linux"}')
                 ;;
             esac
           done
@@ -115,8 +119,10 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
-          key: ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-yunge-${{ hashFiles('pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-${{ matrix.slug }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-yunge-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
+            ${{ runner.os }}-${{ matrix.slug }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-yunge-
+            ${{ runner.os }}-${{ matrix.slug }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-
             ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-yunge-
             ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-
 
@@ -130,7 +136,7 @@ jobs:
           node -e 'const fs=require("node:fs"); const nl=String.fromCharCode(10); fs.writeFileSync("apps/desktop/.env.windows", ["DSH_DESKTOP_APP_ID=com.deepseek.harness","DSH_DESKTOP_AUTO_UPDATE_ENV=test","DOWNLOAD_TEST_ORIGIN=https://example.invalid/","DOWNLOAD_TEST_RELEASE_ID=0123456789abcdef0123456789abcdef","DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN=https://example.invalid/","DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN=https://example.invalid/","DSH_DESKTOP_MANDATORY_UPDATE_CONFIG={\"allowedAuthOrigins\":[\"https://login.example.invalid\"]}","DSH_DESKTOP_WINDOWS_COMPRESSION_LEVEL=3","DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_CONCURRENCY=4",""].join(nl))'
 
       - name: Build unsigned Desktop target tree
-        if: matrix.target != 'linux-x64'
+        if: ${{ !startsWith(matrix.target, 'linux-') }}
         env:
           DSH_DESKTOP_UNSIGNED: '1'
         run: |
@@ -150,7 +156,7 @@ jobs:
       # Write slim to _raw/<slug> so Stage can wipe dist/yunge-artifacts/<slug>
       # without deleting the live source (same-path restage used to self-delete).
       - name: Build linux slim workspace artifact
-        if: matrix.target == 'linux-x64'
+        if: ${{ startsWith(matrix.target, 'linux-') }}
         run: |
           set -euo pipefail
           pnpm exec tsx scripts/pack-yunge-linux-slim.ts --out-root dist/yunge-artifacts/_raw
