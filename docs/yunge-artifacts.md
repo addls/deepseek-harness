@@ -30,7 +30,7 @@ Locally you can still omit `--with-office` for a slim tree. Linux packer default
 | `linux-x64` | `ubuntu-latest` | **Workspace slim** (`scripts/pack-yunge-linux-slim.ts`) — **not** official Desktop Linux | `linux-x64` |
 | `linux-arm64` | `ubuntu-24.04-arm` | Same slim packer on native arm64 Linux (UOS 鲲鹏/飞腾) | `linux-arm64` |
 
-Official Desktop packaging only allows `mac-arm64` / `mac-x64` / `win-x64`. Linux for UOS (云歌方案 A) is a curated workspace snapshot: local pack of the dsh family + desktop-host + vendor + landlock → npm install into a real `node_modules` tree → optional `primary-runtime` when `--with-office`. Slim must run on a **matching Linux arch** host (`linux-x64` / `linux-arm64`); do not cross-copy trees across arch. Some Win/Mac-only natives may be absent; that is expected degradation for UOS.
+Official Desktop packaging only allows `mac-arm64` / `mac-x64` / `win-x64`. Linux for UOS (云歌方案 A) is a curated workspace snapshot: local pack of the dsh family + desktop-host + vendor + landlock **entry and host `node-addon-system-linux-<arch>`** (after `build:native`) → npm install (`--omit=optional`, with the platform package as a direct file: dep) into a real `node_modules` tree → optional `primary-runtime` when `--with-office`. Slim must run on a **matching Linux arch** host (`linux-x64` / `linux-arm64`); do not cross-copy trees across arch. The staged `dsh/` must contain `@deepseek-ai/node-addon-system-linux-<arch>` or flock fails at runtime. Some Win/Mac-only natives may be absent; that is expected degradation for UOS.
 
 ## How to run
 

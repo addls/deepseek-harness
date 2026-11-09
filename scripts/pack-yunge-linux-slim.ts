@@ -15,6 +15,10 @@
  *   pnpm exec tsx scripts/pack-yunge-linux-slim.ts
  *   pnpm exec tsx scripts/pack-yunge-linux-slim.ts --skip-build
  *   pnpm exec tsx scripts/pack-yunge-linux-slim.ts --skip-primary-runtime
+ *
+ * Host `@deepseek-ai/node-addon-system-linux-<arch>` must be packed into the
+ * landlock input set (`build:native` + pack) so flock.js can resolve it after
+ * `npm install --omit=optional`.
  */
 import { spawnSync } from 'node:child_process'
 import {
@@ -41,6 +45,26 @@ const OUT_ROOT = join(ROOT, 'dist', 'yunge-artifacts')
 function die(message: string): never {
   console.error(`pack-yunge-linux-slim: ${message}`)
   process.exit(1)
+}
+
+/** Path to the platform package flock.js resolves at runtime. */
+export function hostSystemNativePackageName(arch: 'x64' | 'arm64'): string {
+  return `@deepseek-ai/node-addon-system-linux-${arch}`
+}
+
+/**
+ * Refuse a staged dsh/ tree that lacks the host system native package.
+ * Without it, DSH flock fails with Cannot find module '.../node-addon-system-linux-<arch>/package.json'.
+ */
+export function assertHostSystemNative(dshRoot: string, arch: 'x64' | 'arm64'): void {
+  const name = hostSystemNativePackageName(arch)
+  const pkg = join(dshRoot, 'node_modules', ...name.split('/'), 'package.json')
+  if (!existsSync(pkg)) {
+    die(
+      `staged dsh missing ${name} (expected ${pkg}). ` +
+        'Pack native/system/packages/linux-<arch> into the landlock package set after build:native.',
+    )
+  }
 }
 
 function run(command: string, args: readonly string[], cwd = ROOT): void {
@@ -86,14 +110,26 @@ function packWorkspace(packedRoot: string): { dsh: string; vendor: string; landl
   mkdirSync(vendor, { recursive: true })
   mkdirSync(landlock, { recursive: true })
 
-  // Same unsigned Desktop pack inputs: local dsh family + private Host + vendor + landlock entry.
+  // Same unsigned Desktop pack inputs: local dsh family + private Host + vendor + landlock entry/platform.
   run(pnpm(), ['exec', 'tsx', 'apps/desktop/scripts/pack-local-packages.ts', '--out', dsh])
   run(pnpm(), ['--dir', 'apps/desktop-host', 'pack', '--pack-destination', dsh])
   run(pnpm(), ['run', 'release:pack', '--family', 'vendor', '--out', vendor])
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
+  const platformPkg = `native/system/packages/linux-${arch}`
+  // Entry + matching platform package: prepareDesktopPackageSet only keeps optionals
+  // that are already packed; --omit=optional then still installs them as direct deps.
   run(pnpm(), ['--dir', 'native/system', 'run', 'build:ts'])
+  run(pnpm(), ['--dir', 'native/system', 'run', 'build:native'])
   run(pnpm(), [
     '--dir',
     'native/system/packages/entry',
+    'pack',
+    '--pack-destination',
+    landlock,
+  ])
+  run(pnpm(), [
+    '--dir',
+    platformPkg,
     'pack',
     '--pack-destination',
     landlock,
@@ -266,6 +302,7 @@ function main(): void {
     rmSync(staged, { recursive: true, force: true })
     mkdirSync(staged, { recursive: true })
     materializeDsh(installRoot, join(staged, 'dsh'))
+    assertHostSystemNative(join(staged, 'dsh'), arch)
 
     let hasPrimary = false
     const wantOffice = Boolean(values['with-office'])
@@ -302,4 +339,8 @@ function main(): void {
   }
 }
 
-main()
+const isDirectRun = process.argv[1] !== undefined
+  && import.meta.url === pathToFileURL(resolve(process.argv[1])).href
+if (isDirectRun) {
+  main()
+}
