@@ -161,6 +161,15 @@ jobs:
       # —— Linux workspace slim (UOS A; not official Desktop) ——
       # Write slim to _raw/<slug> so Stage can wipe dist/yunge-artifacts/<slug>
       # without deleting the live source (same-path restage used to self-delete).
+      # pack-yunge-linux-slim runs native/system build:native (landlock-run needs musl-gcc).
+      - name: Install musl toolchain (linux native)
+        if: ${{ startsWith(matrix.target, 'linux-') }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -yq
+          sudo apt-get install -yq musl-tools
+          command -v musl-gcc
+
       - name: Build linux slim workspace artifact
         if: ${{ startsWith(matrix.target, 'linux-') }}
         run: |
