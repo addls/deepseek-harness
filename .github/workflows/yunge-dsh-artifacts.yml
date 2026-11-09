@@ -1,8 +1,8 @@
 # Build Yunge-consumable DSH artifacts (dsh/ + optional runtime/primary-runtime).
 # These are unsigned runtime trees for 云歌 DSH_AGENT_ARTIFACT — not signed Desktop installers.
 #
-# Trigger: tag push only (`yunge-dsh-v*` preferred for 云歌 pins; `dsh-v*` also accepted).
-# Tag runs build all five targets and attach archives to a GitHub Release.
+# Trigger: tag push (`yunge-dsh-v*` / `dsh-v*`) or manual workflow_dispatch.
+# Tag / manual(all) builds all five targets and attaches archives to a GitHub Release on tags.
 name: Yunge DSH artifacts
 
 on:
@@ -10,6 +10,12 @@ on:
     tags:
       - 'yunge-dsh-v*'
       - 'dsh-v*'
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: 'Comma list or all (mac-arm64,mac-x64,win-x64,linux-x64,linux-arm64)'
+        required: false
+        default: 'all'
 
 permissions:
   contents: read
@@ -24,7 +30,7 @@ env:
   DSH_DESKTOP_UNSIGNED: '1'
 
 jobs:
-  # Always build all five targets on a matching tag push.
+  # Tag push / dispatch default → all five targets; dispatch can narrow via inputs.targets.
   select:
     runs-on: ubuntu-latest
     outputs:
@@ -32,7 +38,7 @@ jobs:
     steps:
       - id: resolve
         env:
-          INPUT_TARGETS: all
+          INPUT_TARGETS: ${{ github.event.inputs.targets || 'all' }}
         run: |
           set -euo pipefail
           raw="${INPUT_TARGETS:-all}"

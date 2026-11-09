@@ -34,7 +34,7 @@ Official Desktop packaging only allows `mac-arm64` / `mac-x64` / `win-x64`. Linu
 
 ## How to run
 
-**Tag push only** — no `workflow_dispatch`, no branch/PR builds.
+**Tag push** (`yunge-dsh-v*` / `dsh-v*`) **or** Actions **Run workflow** (`workflow_dispatch`). Manual runs upload Actions artifacts; only tag runs also attach archives to a GitHub Release. No branch/PR builds.
 
 Push a tag matching `yunge-dsh-v*` (preferred; 云歌 pins this) or `dsh-v*`:
 
