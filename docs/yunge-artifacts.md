@@ -13,11 +13,11 @@ yunge-artifact.json          # metadata (platform/arch/slug)
 
 ## Slim by default (云歌)
 
-Stage **omits** `runtime/primary-runtime` / `office-skills` and **strips** `@deepseek-ai/libreoffice-kit*` (+ `dsh-skill-office`, `dsh-office-to-pdf`) unless you pass `--with-office`.
+**CI / tag Releases always pass `--with-office`** (all mac/win/linux targets): stage keeps `runtime/primary-runtime` / `office-skills` and LibreOffice Kit.
 
-Linux slim packer defaults to `--skip-primary-runtime`; use `--with-office` when an Office-capable linux artifact is needed.
+Locally you can still omit `--with-office` for a slim tree. Linux packer defaults to skipping primary-runtime unless you pass `--with-office` (CI always passes it).
 
-云歌 Host keeps Office off unless `LINGXIN_DSH_ENABLE_OFFICE=1`, so slim artifacts are the normal Release pin.
+云歌 Host still needs `LINGXIN_DSH_ENABLE_OFFICE=1` (or unset-as-on in 云歌 pack) to enable Office at runtime; the Release must be the Office-capable artifact.
 
 
 ## Targets

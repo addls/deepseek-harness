@@ -1,4 +1,4 @@
-# Build Yunge-consumable DSH artifacts (dsh/ + optional runtime/primary-runtime).
+# Build Yunge-consumable DSH artifacts (dsh/ + runtime/primary-runtime + Office; CI always --with-office).
 # These are unsigned runtime trees for 云歌 DSH_AGENT_ARTIFACT — not signed Desktop installers.
 #
 # Trigger: tag push (`yunge-dsh-v*` / `dsh-v*`) or manual workflow_dispatch.
@@ -165,7 +165,8 @@ jobs:
         if: ${{ startsWith(matrix.target, 'linux-') }}
         run: |
           set -euo pipefail
-          pnpm exec tsx scripts/pack-yunge-linux-slim.ts --out-root dist/yunge-artifacts/_raw
+          # Office-capable artifact for 云歌 (primary-runtime + LibreOffice Kit).
+          pnpm exec tsx scripts/pack-yunge-linux-slim.ts --out-root dist/yunge-artifacts/_raw --with-office
           root="dist/yunge-artifacts/_raw/${{ matrix.slug }}"
           test -d "$root/dsh" || { echo "missing $root/dsh" >&2; exit 1; }
           echo "ARTIFACT_FROM=$root" >> "$GITHUB_ENV"
@@ -185,7 +186,8 @@ jobs:
           fi
           # Stage into dist/yunge-artifacts/<slug> (linux source is _raw/<slug>; distinct paths).
           # stage-yunge-dsh-artifact also temp-copies when --from equals the stage dir.
-          # Default slim: no primary-runtime / LibreOffice Kit. Add --with-office for Office artifacts.
+          # CI ships Office-capable artifacts (primary-runtime + LibreOffice Kit) for all targets.
+          args+=(--with-office)
           node scripts/stage-yunge-dsh-artifact.mjs "${args[@]}"
           ls -la dist/yunge-artifacts/
 
