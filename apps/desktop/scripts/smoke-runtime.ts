@@ -13,6 +13,10 @@ import { createPluginProfile } from '../src/project-manager.ts'
 import type { DesktopRuntimeDescriptor } from '../src/runtime-tree.ts'
 
 const OFFICE_SKILLS = ['office', 'office-docx', 'office-pptx', 'office-xlsx']
+/** Kit conversion deadline during packaging smoke; exceeds product default for slow CI hosts and bundled xlsx recalculation. */
+const OFFICE_SMOKE_KIT_TIMEOUT_MS = 120_000
+/** One operations route can run render, format conversion, and xlsx recalculation sequentially. */
+const OFFICE_SMOKE_OPERATIONS_REQUEST_TIMEOUT_MS = 3 * OFFICE_SMOKE_KIT_TIMEOUT_MS + 60_000
 
 /**
  * Require each bundled Office skill to be listed and loaded with a nonempty body.
@@ -180,7 +184,14 @@ export function apply(ctx) {
     manifest.dependencies = { ...manifest.dependencies, [pluginName]: `file:${plugin}` }
     manifest.dsh.profile.bundles.push(pluginName)
     writeFileSync(join(profile, 'package.json'), JSON.stringify(manifest))
-    writeFileSync(join(profile, 'cordis.patch.yml'), '- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 0\n')
+    writeFileSync(join(profile, 'cordis.patch.yml'), `- id: webserver
+  config:
+    host: 127.0.0.1
+    port: 0
+- id: office-kit
+  config:
+    timeoutMs: ${OFFICE_SMOKE_KIT_TIMEOUT_MS}
+`)
     const ready = await Promise.race([host.start(), new Promise<never>((_, reject) => {
       timer = setTimeout(() => { reject(new Error('desktop runtime: Host readiness exceeded 120 seconds')) }, 120_000)
     })])
@@ -208,7 +219,7 @@ export function apply(ctx) {
     console.log('desktop runtime: packaged Office skills listed and loaded')
     for (const { extension } of inputs) {
       const converted = await fetch(new URL(`/desktop-smoke-office/${extension}`, ready.url), {
-        headers: { cookie }, signal: AbortSignal.timeout(120_000),
+        headers: { cookie }, signal: AbortSignal.timeout(OFFICE_SMOKE_KIT_TIMEOUT_MS + 30_000),
       })
       if (!converted.ok) throw new Error(`desktop runtime: ${extension} conversion failed: ${await converted.text()}`)
       const pdf = Buffer.from(await converted.arrayBuffer())
@@ -219,7 +230,7 @@ export function apply(ctx) {
     }
     for (const { extension } of inputs) {
       const operations = await fetch(new URL(`/desktop-smoke-office-operations/${extension}`, ready.url), {
-        headers: { cookie }, signal: AbortSignal.timeout(240_000),
+        headers: { cookie }, signal: AbortSignal.timeout(OFFICE_SMOKE_OPERATIONS_REQUEST_TIMEOUT_MS),
       })
       if (!operations.ok) throw new Error(`desktop runtime: ${extension} Office operations failed: ${await operations.text()}`)
       const result = await operations.json() as { images: string[]; converted: string; recalculated: string | null }
